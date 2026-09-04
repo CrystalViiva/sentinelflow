@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     min_accumulation_score: int = Field(default=75, ge=0, le=100)
     max_spread_percent: Decimal = Field(default=Decimal("0.20"), gt=0)
     signal_expiry_seconds: int = Field(default=60, ge=10, le=3600)
+    max_live_signal_age_seconds: int = Field(default=120, ge=5, le=300)
     binance_mcp_endpoint: str = "https://agent.binance.com/mcp/agentic"
 
     @model_validator(mode="after")
