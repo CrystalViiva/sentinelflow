@@ -18,7 +18,9 @@ def _decimal(value: Any, field_name: str) -> Decimal:
     try:
         result = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} must be a valid decimal") from exc
+        raise ValueError(
+            f"{field_name} must be a valid decimal"
+        ) from exc
 
     if not result.is_finite():
         raise ValueError(f"{field_name} must be finite")
@@ -30,12 +32,58 @@ def _integer(value: Any, field_name: str) -> int:
     try:
         return int(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} must be a valid integer") from exc
+        raise ValueError(
+            f"{field_name} must be a valid integer"
+        ) from exc
 
 
-def _validate_payload_size(payload: str, field_name: str) -> None:
+def assert_live_snapshot_fresh(
+    ticker_payload: dict,
+    max_age_seconds: int,
+    now: datetime | None = None,
+) -> None:
+    """
+    Reject stale or future-dated Binance snapshots at ingestion.
+
+    A five-second future tolerance permits minor clock differences.
+    """
+    snapshot_ms = _integer(
+        ticker_payload.get("closeTime"),
+        "ticker.closeTime",
+    )
+
+    if snapshot_ms <= 0:
+        raise ValueError("ticker.closeTime must be positive")
+
+    snapshot_time = datetime.fromtimestamp(
+        snapshot_ms / 1000,
+        tz=UTC,
+    )
+    current_time = now or datetime.now(UTC)
+    age_seconds = (
+        current_time - snapshot_time
+    ).total_seconds()
+
+    if age_seconds < -5:
+        raise ValueError(
+            "Live snapshot timestamp cannot be in the future"
+        )
+
+    if age_seconds > max_age_seconds:
+        raise ValueError(
+            f"Live snapshot is stale: age={age_seconds:.1f}s, "
+            f"maximum={max_age_seconds}s"
+        )
+
+
+def _validate_payload_size(
+    payload: str,
+    field_name: str,
+) -> None:
     if not isinstance(payload, str):
-        raise ValueError(f"{field_name} must be a JSON string")
+        raise ValueError(
+            f"{field_name} must be a JSON string"
+        )
 
     payload_size = len(payload.encode("utf-8"))
 
@@ -46,30 +94,44 @@ def _validate_payload_size(payload: str, field_name: str) -> None:
         )
 
 
-def parse_json_object(payload: str, field_name: str) -> dict:
+def parse_json_object(
+    payload: str,
+    field_name: str,
+) -> dict:
     _validate_payload_size(payload, field_name)
 
     try:
         value = json.loads(payload)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{field_name} must be valid JSON") from exc
+        raise ValueError(
+            f"{field_name} must be valid JSON"
+        ) from exc
 
     if not isinstance(value, dict):
-        raise ValueError(f"{field_name} must contain a JSON object")
+        raise ValueError(
+            f"{field_name} must contain a JSON object"
+        )
 
     return value
 
 
-def parse_json_array(payload: str, field_name: str) -> list:
+def parse_json_array(
+    payload: str,
+    field_name: str,
+) -> list:
     _validate_payload_size(payload, field_name)
 
     try:
         value = json.loads(payload)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{field_name} must be valid JSON") from exc
+        raise ValueError(
+            f"{field_name} must be valid JSON"
+        ) from exc
 
     if not isinstance(value, list):
-        raise ValueError(f"{field_name} must contain a JSON array")
+        raise ValueError(
+            f"{field_name} must contain a JSON array"
+        )
 
     return value
 
@@ -120,12 +182,14 @@ def _parse_book_side(
 
         if price <= 0:
             raise ValueError(
-                f"depth.{side_name}[{index}].price must be positive"
+                f"depth.{side_name}[{index}].price "
+                "must be positive"
             )
 
         if quantity < 0:
             raise ValueError(
-                f"depth.{side_name}[{index}].quantity cannot be negative"
+                f"depth.{side_name}[{index}].quantity "
+                "cannot be negative"
             )
 
         parsed.append((price, quantity))
@@ -140,14 +204,16 @@ def build_live_observations(
     depth_payload: dict,
 ) -> list[MarketObservation]:
     """
-    Convert read-only Binance MCP responses into validated observations.
+    Convert read-only Binance MCP responses into observations.
 
-    The ticker closeTime acts as the snapshot clock. Klines whose close time
-    is later than that clock are still open and are excluded from scoring.
+    The ticker closeTime acts as the snapshot clock. Klines whose
+    close time is later than that clock are still open and excluded.
     """
     normalized_symbol = _validate_symbol(symbol)
 
-    ticker_symbol = str(ticker_payload.get("symbol", "")).upper()
+    ticker_symbol = str(
+        ticker_payload.get("symbol", "")
+    ).upper()
 
     if ticker_symbol != normalized_symbol:
         raise ValueError(
@@ -164,7 +230,9 @@ def build_live_observations(
         raise ValueError("ticker.closeTime must be positive")
 
     if not isinstance(klines_payload, list):
-        raise ValueError("klines must contain a JSON array")
+        raise ValueError(
+            "klines must contain a JSON array"
+        )
 
     if len(klines_payload) > MAX_KLINES:
         raise ValueError(
@@ -172,7 +240,9 @@ def build_live_observations(
         )
 
     if not isinstance(depth_payload, dict):
-        raise ValueError("depth must contain a JSON object")
+        raise ValueError(
+            "depth must contain a JSON object"
+        )
 
     _integer(
         depth_payload.get("lastUpdateId"),
@@ -193,16 +263,22 @@ def build_live_observations(
 
     if best_bid >= best_ask:
         raise ValueError(
-            f"Invalid order book: best bid {best_bid} must be below "
-            f"best ask {best_ask}"
+            f"Invalid order book: best bid {best_bid} "
+            f"must be below best ask {best_ask}"
         )
 
     bid_depth = sum(
-        (price * quantity for price, quantity in bids),
+        (
+            price * quantity
+            for price, quantity in bids
+        ),
         start=Decimal("0"),
     )
     ask_depth = sum(
-        (price * quantity for price, quantity in asks),
+        (
+            price * quantity
+            for price, quantity in asks
+        ),
         start=Decimal("0"),
     )
 
@@ -230,9 +306,13 @@ def build_live_observations(
             )
 
         if close_time_ms <= snapshot_ms:
-            completed_rows.append((close_time_ms, row))
+            completed_rows.append(
+                (close_time_ms, row)
+            )
 
-    completed_rows.sort(key=lambda item: item[0])
+    completed_rows.sort(
+        key=lambda item: item[0]
+    )
 
     if len(completed_rows) < 5:
         raise ValueError(

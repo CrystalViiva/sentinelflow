@@ -10,23 +10,36 @@ from app.config import get_settings
 from app.database.repositories import ProposalRepository
 from app.database.session import SessionLocal
 from app.replay.loader import load_replay
-from app.services.execution import begin_execution, finish_execution
-from app.services.proposals import create_and_evaluate, decide
+from app.services.execution import (
+    begin_execution,
+    finish_execution,
+)
+from app.services.live_market import (
+    assert_live_snapshot_fresh,
+    build_live_observations,
+    parse_json_array,
+    parse_json_object,
+)
+from app.services.proposals import (
+    create_and_evaluate,
+    decide,
+)
 from app.services.scanner import analyze_and_save
-from app.services.live_market import (build_live_observations, parse_json_array, parse_json_object,)
 
 
 mcp = MCPServer(
     "SentinelFlow",
     instructions=(
-        "Use SentinelFlow for explainable analysis and proposal risk controls. "
-        "Approval never executes a Binance order. Use the separately "
-        "authenticated official Binance MCP only after SentinelFlow returns "
-        "an approved, unexpired proposal. Replay and paper signals can never "
-        "enter live execution. Execution reservation requires an exact copy "
+        "Use SentinelFlow for explainable analysis and proposal "
+        "risk controls. Approval never executes a Binance order. "
+        "Use the separately authenticated official Binance MCP "
+        "only after SentinelFlow returns an approved, unexpired "
+        "proposal. Replay and paper signals can never enter live "
+        "execution. Execution reservation requires an exact copy "
         "of every human-approved order field."
     ),
 )
+
 
 @mcp.tool()
 def analyze_live_snapshot(
@@ -36,14 +49,28 @@ def analyze_live_snapshot(
     depth_json: str,
 ) -> str:
     """
-    Validate and analyze read-only live market data returned by Binance MCP.
+    Analyze fresh read-only market data returned by Binance MCP.
 
-    This tool stores a live signal but cannot create, approve, reserve, or
-    execute an order.
+    This cannot create, approve, reserve, or execute an order.
     """
-    ticker_payload = parse_json_object(ticker_json, "ticker_json")
-    klines_payload = parse_json_array(klines_json, "klines_json")
-    depth_payload = parse_json_object(depth_json, "depth_json")
+    ticker_payload = parse_json_object(
+        ticker_json,
+        "ticker_json",
+    )
+    klines_payload = parse_json_array(
+        klines_json,
+        "klines_json",
+    )
+    depth_payload = parse_json_object(
+        depth_json,
+        "depth_json",
+    )
+
+    settings = get_settings()
+    assert_live_snapshot_fresh(
+        ticker_payload,
+        settings.max_live_signal_age_seconds,
+    )
 
     observations = build_live_observations(
         symbol=symbol,
@@ -53,7 +80,11 @@ def analyze_live_snapshot(
     )
 
     with SessionLocal() as db:
-        signal = analyze_and_save(db, observations, "live")
+        signal = analyze_and_save(
+            db,
+            observations,
+            "live",
+        )
 
         return json.dumps(
             {
@@ -76,12 +107,16 @@ def analyze_live_snapshot(
             default=str,
         )
 
+
 @mcp.tool()
 def analyze_replay(
     dataset: str = "sol_accumulation.json",
 ) -> str:
-    """Analyze historical data; replay mode can never execute an order."""
-    path = Path("data/replay_samples") / Path(dataset).name
+    """Analyze historical data; replay can never execute."""
+    path = (
+        Path("data/replay_samples")
+        / Path(dataset).name
+    )
 
     if not path.exists():
         raise ValueError("Replay dataset not found")
@@ -115,13 +150,16 @@ def create_paper_proposal(
     min_notional: str = "5",
     available_balance: str = "100",
 ) -> str:
-    """Create and risk-check a paper proposal; never place an order."""
+    """Create and risk-check a proposal; never place an order."""
     settings = get_settings()
 
     with SessionLocal() as db:
         from app.database.models import Signal
 
-        signal = db.get(Signal, uuid.UUID(signal_id))
+        signal = db.get(
+            Signal,
+            uuid.UUID(signal_id),
+        )
 
         if signal is None:
             raise ValueError("Signal not found")
@@ -143,7 +181,9 @@ def create_paper_proposal(
                 "version": proposal.version,
                 "expires_at": proposal.expires_at,
                 "source_mode": signal.source_mode,
-                "execution_allowed": signal.source_mode == "live",
+                "execution_allowed": (
+                    signal.source_mode == "live"
+                ),
                 "risk": risk.model_dump(mode="json"),
             },
             default=str,
@@ -155,7 +195,7 @@ def approve_proposal(
     proposal_id: str,
     expected_version: int,
 ) -> str:
-    """Record human approval; this never executes or contacts Binance."""
+    """Record human approval; never execute or contact Binance."""
     with SessionLocal() as db:
         proposal = decide(
             db,
@@ -165,14 +205,18 @@ def approve_proposal(
             actor="mcp_user",
         )
 
+        source_mode = proposal.signal.source_mode
+
         return json.dumps(
             {
                 "proposal_id": str(proposal.id),
                 "status": proposal.status,
                 "version": proposal.version,
                 "client_order_id": proposal.client_order_id,
-                "source_mode": proposal.signal.source_mode,
-                "execution_allowed": proposal.signal.source_mode == "live",
+                "source_mode": source_mode,
+                "execution_allowed": (
+                    source_mode == "live"
+                ),
             }
         )
 
@@ -181,7 +225,7 @@ def approve_proposal(
 def get_approved_proposal(
     proposal_id: str,
 ) -> str:
-    """Return an approved, unexpired proposal for human inspection."""
+    """Return an approved, unexpired proposal for inspection."""
     from datetime import datetime
 
     from app.database.models import ProposalStatus
@@ -194,9 +238,13 @@ def get_approved_proposal(
         if proposal is None:
             raise ValueError("Proposal not found")
 
-        if proposal.status != ProposalStatus.APPROVED.value:
+        if (
+            proposal.status
+            != ProposalStatus.APPROVED.value
+        ):
             raise ValueError(
-                f"Proposal is not approved; status={proposal.status}"
+                "Proposal is not approved; "
+                f"status={proposal.status}"
             )
 
         if proposal.expires_at <= datetime.now(UTC):
@@ -210,10 +258,16 @@ def get_approved_proposal(
                 "symbol": proposal.symbol,
                 "side": proposal.side,
                 "order_type": proposal.order_type,
-                "quote_amount": str(proposal.quote_amount),
-                "client_order_id": proposal.client_order_id,
+                "quote_amount": str(
+                    proposal.quote_amount
+                ),
+                "client_order_id": (
+                    proposal.client_order_id
+                ),
                 "source_mode": source_mode,
-                "execution_allowed": source_mode == "live",
+                "execution_allowed": (
+                    source_mode == "live"
+                ),
             }
         )
 
@@ -228,10 +282,10 @@ def reserve_approved_execution(
     client_order_id: str,
 ) -> str:
     """
-    Reserve an exact approved live proposal before calling Binance MCP.
+    Reserve an exact approved live proposal before Binance MCP.
 
-    Every supplied execution field must exactly match the stored,
-    human-approved proposal. Replay and paper proposals are rejected.
+    Every field must match the stored human-approved proposal.
+    Replay and paper proposals are rejected.
     """
     requested_payload = {
         "symbol": symbol,
@@ -255,12 +309,19 @@ def reserve_approved_execution(
                 "symbol": proposal.symbol,
                 "side": proposal.side,
                 "order_type": proposal.order_type,
-                "quote_amount": str(proposal.quote_amount),
-                "client_order_id": proposal.client_order_id,
-                "source_mode": proposal.signal.source_mode,
+                "quote_amount": str(
+                    proposal.quote_amount
+                ),
+                "client_order_id": (
+                    proposal.client_order_id
+                ),
+                "source_mode": (
+                    proposal.signal.source_mode
+                ),
                 "next_step": (
-                    "Show these exact details to the user. Then use the "
-                    "official Binance MCP and obtain its separate confirmation."
+                    "Show these exact details to the user. "
+                    "Then use the official Binance MCP and "
+                    "obtain its separate confirmation."
                 ),
             }
         )
@@ -278,11 +339,12 @@ def record_execution_result(
     """
     Record a verified Binance result.
 
-    Outcome must be executed, failed, or unknown. Unknown outcomes require
-    reconciliation and must never trigger a blind retry.
+    Unknown outcomes require reconciliation and never a blind retry.
     """
     try:
-        response_payload = json.loads(response_json)
+        response_payload = json.loads(
+            response_json
+        )
     except json.JSONDecodeError as exc:
         raise ValueError(
             "response_json must be valid JSON"
