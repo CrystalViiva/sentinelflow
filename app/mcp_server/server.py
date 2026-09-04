@@ -13,6 +13,7 @@ from app.replay.loader import load_replay
 from app.services.execution import begin_execution, finish_execution
 from app.services.proposals import create_and_evaluate, decide
 from app.services.scanner import analyze_and_save
+from app.services.live_market import (build_live_observations, parse_json_array, parse_json_object,)
 
 
 mcp = MCPServer(
@@ -27,6 +28,53 @@ mcp = MCPServer(
     ),
 )
 
+@mcp.tool()
+def analyze_live_snapshot(
+    symbol: str,
+    ticker_json: str,
+    klines_json: str,
+    depth_json: str,
+) -> str:
+    """
+    Validate and analyze read-only live market data returned by Binance MCP.
+
+    This tool stores a live signal but cannot create, approve, reserve, or
+    execute an order.
+    """
+    ticker_payload = parse_json_object(ticker_json, "ticker_json")
+    klines_payload = parse_json_array(klines_json, "klines_json")
+    depth_payload = parse_json_object(depth_json, "depth_json")
+
+    observations = build_live_observations(
+        symbol=symbol,
+        ticker_payload=ticker_payload,
+        klines_payload=klines_payload,
+        depth_payload=depth_payload,
+    )
+
+    with SessionLocal() as db:
+        signal = analyze_and_save(db, observations, "live")
+
+        return json.dumps(
+            {
+                "signal_id": str(signal.id),
+                "symbol": signal.symbol,
+                "source_mode": signal.source_mode,
+                "observed_at": signal.observed_at,
+                "score": signal.score,
+                "classification": signal.classification,
+                "evidence": signal.evidence,
+                "counter_evidence": signal.counter_evidence,
+                "completed_klines_used": len(observations),
+                "safety": {
+                    "proposal_created": False,
+                    "approved": False,
+                    "execution_reserved": False,
+                    "binance_order_called": False,
+                },
+            },
+            default=str,
+        )
 
 @mcp.tool()
 def analyze_replay(

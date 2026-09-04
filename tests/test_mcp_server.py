@@ -14,6 +14,7 @@ def test_mcp_tool_discovery():
     names = asyncio.run(discover())
     assert {
         "analyze_replay",
+        "analyze_live_snapshot",
         "create_paper_proposal",
         "approve_proposal",
         "reserve_approved_execution",
