@@ -1,0 +1,13 @@
+{
+  "name": "Illiquid false positive",
+  "source": "synthetic safety scenario",
+  "events": [
+    {"symbol":"TESTUSDT","event_time":"2026-09-03T14:00:00Z","open":"1.00","high":"1.01","low":"0.99","close":"1.00","volume":"100","best_bid":"0.99","best_ask":"1.01","bid_depth":"80","ask_depth":"75"},
+    {"symbol":"TESTUSDT","event_time":"2026-09-03T14:01:00Z","open":"1.00","high":"1.01","low":"0.99","close":"1.00","volume":"95","best_bid":"0.99","best_ask":"1.01","bid_depth":"85","ask_depth":"80"},
+    {"symbol":"TESTUSDT","event_time":"2026-09-03T14:02:00Z","open":"1.00","high":"1.01","low":"0.99","close":"1.00","volume":"105","best_bid":"0.99","best_ask":"1.01","bid_depth":"82","ask_depth":"78"},
+    {"symbol":"TESTUSDT","event_time":"2026-09-03T14:03:00Z","open":"1.00","high":"1.01","low":"0.99","close":"1.00","volume":"100","best_bid":"0.99","best_ask":"1.01","bid_depth":"84","ask_depth":"79"},
+    {"symbol":"TESTUSDT","event_time":"2026-09-03T14:04:00Z","open":"1.00","high":"1.02","low":"0.99","close":"1.01","volume":"110","best_bid":"1.00","best_ask":"1.02","bid_depth":"90","ask_depth":"80"},
+    {"symbol":"TESTUSDT","event_time":"2026-09-03T14:05:00Z","open":"1.01","high":"1.03","low":"1.00","close":"1.02","volume":"800","best_bid":"1.00","best_ask":"1.04","bid_depth":"300","ask_depth":"100"}
+  ]
+}
+

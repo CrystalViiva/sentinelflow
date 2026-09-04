@@ -1,0 +1,17 @@
+{
+  "name": "SOL accumulation example",
+  "source": "synthetic replay shaped like public market data; replace with recorded Binance data before submission",
+  "events": [
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:00:00Z","open":"142.00","high":"142.20","low":"141.90","close":"142.10","volume":"1000","best_bid":"142.09","best_ask":"142.11","bid_depth":"8000","ask_depth":"7900"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:01:00Z","open":"142.10","high":"142.22","low":"142.00","close":"142.12","volume":"1050","best_bid":"142.11","best_ask":"142.13","bid_depth":"8200","ask_depth":"8000"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:02:00Z","open":"142.12","high":"142.25","low":"142.02","close":"142.15","volume":"980","best_bid":"142.14","best_ask":"142.16","bid_depth":"8500","ask_depth":"8050"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:03:00Z","open":"142.15","high":"142.28","low":"142.06","close":"142.18","volume":"1100","best_bid":"142.17","best_ask":"142.19","bid_depth":"8900","ask_depth":"8100"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:04:00Z","open":"142.18","high":"142.30","low":"142.09","close":"142.20","volume":"1020","best_bid":"142.19","best_ask":"142.21","bid_depth":"9000","ask_depth":"8200"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:05:00Z","open":"142.20","high":"142.32","low":"142.10","close":"142.21","volume":"990","best_bid":"142.20","best_ask":"142.22","bid_depth":"9100","ask_depth":"8250"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:06:00Z","open":"142.21","high":"142.35","low":"142.13","close":"142.24","volume":"1040","best_bid":"142.23","best_ask":"142.25","bid_depth":"9400","ask_depth":"8300"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:07:00Z","open":"142.24","high":"142.38","low":"142.16","close":"142.26","volume":"1010","best_bid":"142.25","best_ask":"142.27","bid_depth":"9600","ask_depth":"8400"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:08:00Z","open":"142.26","high":"142.42","low":"142.19","close":"142.30","volume":"1080","best_bid":"142.29","best_ask":"142.31","bid_depth":"10000","ask_depth":"8500"},
+    {"symbol":"SOLUSDT","event_time":"2026-09-03T12:09:00Z","open":"142.30","high":"142.50","low":"142.22","close":"142.38","volume":"5200","best_bid":"142.37","best_ask":"142.39","bid_depth":"21000","ask_depth":"8500"}
+  ]
+}
+

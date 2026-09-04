@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinelflow"
+version = "0.2.0"
+description = "Explainable market-surveillance and risk-control agent for Binance Agent OS"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14,<2",
+  "fastapi>=0.115,<1",
+  "google-genai>=1.0,<2",
+  "httpx>=0.28,<1",
+  "mcp>=2,<3",
+  "numpy>=2,<3",
+  "pandas>=2.2,<3",
+  "plotly>=6,<7",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.7,<3",
+  "scikit-learn>=1.6,<2",
+  "sqlalchemy>=2.0,<3",
+  "streamlit>=1.42,<2",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0.3,<10", "pytest-cov>=6,<7", "ruff>=0.9,<1"]
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["integration: requires a disposable PostgreSQL database"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

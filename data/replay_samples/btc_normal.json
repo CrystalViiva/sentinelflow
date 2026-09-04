@@ -1,0 +1,13 @@
+{
+  "name": "BTC normal market",
+  "source": "synthetic replay shaped like public market data; replace with recorded Binance data before submission",
+  "events": [
+    {"symbol":"BTCUSDT","event_time":"2026-09-03T13:00:00Z","open":"77000","high":"77030","low":"76980","close":"77010","volume":"100","best_bid":"77009","best_ask":"77011","bid_depth":"420000","ask_depth":"410000"},
+    {"symbol":"BTCUSDT","event_time":"2026-09-03T13:01:00Z","open":"77010","high":"77040","low":"76990","close":"77020","volume":"104","best_bid":"77019","best_ask":"77021","bid_depth":"415000","ask_depth":"418000"},
+    {"symbol":"BTCUSDT","event_time":"2026-09-03T13:02:00Z","open":"77020","high":"77045","low":"76995","close":"77005","volume":"98","best_bid":"77004","best_ask":"77006","bid_depth":"425000","ask_depth":"420000"},
+    {"symbol":"BTCUSDT","event_time":"2026-09-03T13:03:00Z","open":"77005","high":"77035","low":"76985","close":"77015","volume":"102","best_bid":"77014","best_ask":"77016","bid_depth":"419000","ask_depth":"422000"},
+    {"symbol":"BTCUSDT","event_time":"2026-09-03T13:04:00Z","open":"77015","high":"77050","low":"77000","close":"77025","volume":"106","best_bid":"77024","best_ask":"77026","bid_depth":"430000","ask_depth":"425000"},
+    {"symbol":"BTCUSDT","event_time":"2026-09-03T13:05:00Z","open":"77025","high":"77045","low":"76995","close":"77012","volume":"101","best_bid":"77011","best_ask":"77013","bid_depth":"421000","ask_depth":"419000"}
+  ]
+}
+
