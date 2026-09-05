@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database.repositories import ProposalRepository
 from app.database.session import SessionLocal
 from app.replay.loader import load_replay
+from app.security.redaction import redact_text
 from app.services.execution import (
     begin_execution,
     finish_execution,
@@ -51,33 +52,49 @@ def analyze_live_snapshot(
     """
     Analyze fresh read-only market data returned by Binance MCP.
 
-    This cannot create, approve, reserve, or execute an order.
+    Validation rejections are returned as structured results. This
+    tool cannot create, approve, reserve, or execute an order.
     """
-    ticker_payload = parse_json_object(
-        ticker_json,
-        "ticker_json",
-    )
-    klines_payload = parse_json_array(
-        klines_json,
-        "klines_json",
-    )
-    depth_payload = parse_json_object(
-        depth_json,
-        "depth_json",
-    )
+    try:
+        ticker_payload = parse_json_object(
+            ticker_json,
+            "ticker_json",
+        )
+        klines_payload = parse_json_array(
+            klines_json,
+            "klines_json",
+        )
+        depth_payload = parse_json_object(
+            depth_json,
+            "depth_json",
+        )
 
-    settings = get_settings()
-    assert_live_snapshot_fresh(
-        ticker_payload,
-        settings.max_live_signal_age_seconds,
-    )
+        settings = get_settings()
+        assert_live_snapshot_fresh(
+            ticker_payload,
+            settings.max_live_signal_age_seconds,
+        )
 
-    observations = build_live_observations(
-        symbol=symbol,
-        ticker_payload=ticker_payload,
-        klines_payload=klines_payload,
-        depth_payload=depth_payload,
-    )
+        observations = build_live_observations(
+            symbol=symbol,
+            ticker_payload=ticker_payload,
+            klines_payload=klines_payload,
+            depth_payload=depth_payload,
+        )
+    except ValueError as exc:
+        return json.dumps(
+            {
+                "accepted": False,
+                "error": redact_text(str(exc)),
+                "signal_created": False,
+                "safety": {
+                    "proposal_created": False,
+                    "approved": False,
+                    "execution_reserved": False,
+                    "binance_order_called": False,
+                },
+            }
+        )
 
     with SessionLocal() as db:
         signal = analyze_and_save(
@@ -88,6 +105,7 @@ def analyze_live_snapshot(
 
         return json.dumps(
             {
+                "accepted": True,
                 "signal_id": str(signal.id),
                 "symbol": signal.symbol,
                 "source_mode": signal.source_mode,
