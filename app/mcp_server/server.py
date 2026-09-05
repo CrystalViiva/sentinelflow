@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import UTC
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -12,8 +12,12 @@ from app.database.session import SessionLocal
 from app.replay.loader import load_replay
 from app.security.redaction import redact_text
 from app.services.execution import (
+    assert_live_signal_fresh,
     begin_execution,
     finish_execution,
+)
+from app.services.live_constraints import (
+    derive_live_constraints,
 )
 from app.services.live_market import (
     assert_live_snapshot_fresh,
@@ -22,6 +26,8 @@ from app.services.live_market import (
     parse_json_object,
 )
 from app.services.proposals import (
+    assert_live_proposal_source,
+    assert_paper_proposal_source,
     create_and_evaluate,
     decide,
 )
@@ -31,45 +37,78 @@ from app.services.scanner import analyze_and_save
 mcp = MCPServer(
     "SentinelFlow",
     instructions=(
-        "Use SentinelFlow for explainable analysis and proposal "
+        "Use SentinelFlow for explainable analysis and deterministic "
         "risk controls. Approval never executes a Binance order. "
-        "Use the separately authenticated official Binance MCP "
-        "only after SentinelFlow returns an approved, unexpired "
-        "proposal. Replay and paper signals can never enter live "
-        "execution. Execution reservation requires an exact copy "
-        "of every human-approved order field."
+        "Use the separately authenticated official Binance MCP only "
+        "after SentinelFlow returns an approved, unexpired proposal. "
+        "Replay and paper signals can never enter live execution. "
+        "Live proposals must use account balances and trading rules "
+        "supplied from read-only Binance MCP responses. Execution "
+        "reservation requires an exact copy of every human-approved "
+        "order field."
     ),
 )
+
+
+def validation_rejection(
+    error: Exception,
+    stage: str,
+) -> str:
+    return json.dumps(
+        {
+            "accepted": False,
+            "stage": stage,
+            "error": redact_text(str(error)),
+            "signal_created": False,
+            "proposal_created": False,
+            "safety": {
+                "approved": False,
+                "execution_reserved": False,
+                "binance_order_called": False,
+            },
+        }
+    )
 
 
 @mcp.tool()
 def analyze_live_snapshot(
     symbol: str,
-    ticker_json: str,
-    klines_json: str,
-    depth_json: str,
+    ticker: dict,
+    klines: list,
+    depth: dict,
 ) -> str:
     """
     Analyze fresh read-only market data returned by Binance MCP.
 
-    Validation rejections are returned as structured results. This
-    tool cannot create, approve, reserve, or execute an order.
+    Inputs use native MCP objects rather than double-encoded JSON.
+    Validation rejections return structured results. This tool cannot
+    create, approve, reserve, or execute an order.
     """
     try:
         ticker_payload = parse_json_object(
-            ticker_json,
-            "ticker_json",
+            json.dumps(
+                ticker,
+                separators=(",", ":"),
+            ),
+            "ticker",
         )
         klines_payload = parse_json_array(
-            klines_json,
-            "klines_json",
+            json.dumps(
+                klines,
+                separators=(",", ":"),
+            ),
+            "klines",
         )
         depth_payload = parse_json_object(
-            depth_json,
-            "depth_json",
+            json.dumps(
+                depth,
+                separators=(",", ":"),
+            ),
+            "depth",
         )
 
         settings = get_settings()
+
         assert_live_snapshot_fresh(
             ticker_payload,
             settings.max_live_signal_age_seconds,
@@ -81,19 +120,10 @@ def analyze_live_snapshot(
             klines_payload=klines_payload,
             depth_payload=depth_payload,
         )
-    except ValueError as exc:
-        return json.dumps(
-            {
-                "accepted": False,
-                "error": redact_text(str(exc)),
-                "signal_created": False,
-                "safety": {
-                    "proposal_created": False,
-                    "approved": False,
-                    "execution_reserved": False,
-                    "binance_order_called": False,
-                },
-            }
+    except (TypeError, ValueError) as exc:
+        return validation_rejection(
+            exc,
+            "live_market_validation",
         )
 
     with SessionLocal() as db:
@@ -168,41 +198,200 @@ def create_paper_proposal(
     min_notional: str = "5",
     available_balance: str = "100",
 ) -> str:
-    """Create and risk-check a proposal; never place an order."""
+    """
+    Create and risk-check a non-executable paper proposal.
+
+    Live signals are rejected and must use create_live_proposal.
+    """
     settings = get_settings()
 
     with SessionLocal() as db:
         from app.database.models import Signal
 
-        signal = db.get(
-            Signal,
-            uuid.UUID(signal_id),
-        )
+        try:
+            parsed_signal_id = uuid.UUID(signal_id)
+            parsed_request_id = uuid.UUID(request_id)
+            parsed_quote_amount = Decimal(quote_amount)
+            parsed_min_notional = Decimal(min_notional)
+            parsed_available_balance = Decimal(
+                available_balance
+            )
 
-        if signal is None:
-            raise ValueError("Signal not found")
+            signal = db.get(
+                Signal,
+                parsed_signal_id,
+            )
 
-        proposal, risk = create_and_evaluate(
-            db,
-            settings,
-            signal,
-            Decimal(quote_amount),
-            Decimal(min_notional),
-            Decimal(available_balance),
-            uuid.UUID(request_id),
-        )
+            if signal is None:
+                raise LookupError("Signal not found")
+
+            assert_paper_proposal_source(signal)
+
+            proposal, risk = create_and_evaluate(
+                db,
+                settings,
+                signal,
+                parsed_quote_amount,
+                parsed_min_notional,
+                parsed_available_balance,
+                parsed_request_id,
+            )
+        except (
+            InvalidOperation,
+            LookupError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            return validation_rejection(
+                exc,
+                "paper_proposal_validation",
+            )
 
         return json.dumps(
             {
+                "accepted": True,
                 "proposal_id": str(proposal.id),
                 "status": proposal.status,
                 "version": proposal.version,
                 "expires_at": proposal.expires_at,
                 "source_mode": signal.source_mode,
-                "execution_allowed": (
-                    signal.source_mode == "live"
-                ),
+                "execution_allowed": False,
                 "risk": risk.model_dump(mode="json"),
+            },
+            default=str,
+        )
+
+
+@mcp.tool()
+def create_live_proposal(
+    signal_id: str,
+    quote_amount: str,
+    request_id: str,
+    account: dict,
+    exchange_info: dict,
+) -> str:
+    """
+    Create a live proposal using read-only Binance MCP constraints.
+
+    The account balance and exchange rules are derived from native
+    Binance getAccount and exchangeInfo responses. This tool never
+    approves, reserves, or executes an order.
+    """
+    settings = get_settings()
+
+    try:
+        account_payload = parse_json_object(
+            json.dumps(
+                account,
+                separators=(",", ":"),
+            ),
+            "account",
+        )
+        exchange_payload = parse_json_object(
+            json.dumps(
+                exchange_info,
+                separators=(",", ":"),
+            ),
+            "exchange_info",
+        )
+        parsed_signal_id = uuid.UUID(signal_id)
+        parsed_request_id = uuid.UUID(request_id)
+        parsed_quote_amount = Decimal(quote_amount)
+    except (
+        InvalidOperation,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return validation_rejection(
+            exc,
+            "live_proposal_input_validation",
+        )
+
+    with SessionLocal() as db:
+        from app.database.models import Signal
+
+        try:
+            signal = db.get(
+                Signal,
+                parsed_signal_id,
+            )
+
+            if signal is None:
+                raise LookupError("Signal not found")
+
+            assert_live_proposal_source(signal)
+
+            assert_live_signal_fresh(
+                observed_at=signal.observed_at,
+                max_age_seconds=(
+                    settings.max_live_signal_age_seconds
+                ),
+            )
+
+            constraints = derive_live_constraints(
+                symbol=signal.symbol,
+                account=account_payload,
+                exchange_info=exchange_payload,
+            )
+
+            proposal, risk = create_and_evaluate(
+                db,
+                settings,
+                signal,
+                parsed_quote_amount,
+                constraints.min_notional,
+                constraints.available_balance,
+                parsed_request_id,
+            )
+        except (
+            InvalidOperation,
+            LookupError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            return validation_rejection(
+                exc,
+                "live_proposal_validation",
+            )
+
+        return json.dumps(
+            {
+                "accepted": True,
+                "proposal_created": True,
+                "proposal_id": str(proposal.id),
+                "status": proposal.status,
+                "version": proposal.version,
+                "expires_at": proposal.expires_at,
+                "source_mode": signal.source_mode,
+                "risk_passed": risk.passed,
+                "execution_allowed": False,
+                "constraints": {
+                    "symbol": constraints.symbol,
+                    "base_asset": constraints.base_asset,
+                    "quote_asset": constraints.quote_asset,
+                    "available_balance": str(
+                        constraints.available_balance
+                    ),
+                    "min_notional": str(
+                        constraints.min_notional
+                    ),
+                    "min_quantity": str(
+                        constraints.min_quantity
+                    ),
+                    "quantity_step_size": str(
+                        constraints.quantity_step_size
+                    ),
+                    "quote_order_qty_market_allowed": (
+                        constraints
+                        .quote_order_qty_market_allowed
+                    ),
+                },
+                "risk": risk.model_dump(mode="json"),
+                "safety": {
+                    "approved": False,
+                    "execution_reserved": False,
+                    "binance_order_called": False,
+                },
             },
             default=str,
         )
@@ -234,6 +423,7 @@ def approve_proposal(
                 "source_mode": source_mode,
                 "execution_allowed": (
                     source_mode == "live"
+                    and proposal.status == "APPROVED"
                 ),
             }
         )

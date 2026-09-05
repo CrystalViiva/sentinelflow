@@ -22,62 +22,105 @@ def test_mcp_tool_discovery():
         "analyze_replay",
         "analyze_live_snapshot",
         "create_paper_proposal",
+        "create_live_proposal",
         "approve_proposal",
         "reserve_approved_execution",
         "record_execution_result",
     } <= names
 
 
+def test_live_snapshot_schema_uses_native_objects():
+    async def get_schema() -> dict:
+        async with Client(mcp) as client:
+            result = await client.list_tools()
+
+            tool = next(
+                item
+                for item in result.tools
+                if item.name == "analyze_live_snapshot"
+            )
+
+            return tool.input_schema
+
+    schema = asyncio.run(get_schema())
+    properties = schema["properties"]
+
+    assert properties["ticker"]["type"] == "object"
+    assert properties["klines"]["type"] == "array"
+    assert properties["depth"]["type"] == "object"
+
+    assert "ticker_json" not in properties
+    assert "klines_json" not in properties
+    assert "depth_json" not in properties
+
+
+def test_live_proposal_schema_uses_native_objects():
+    async def get_schema() -> dict:
+        async with Client(mcp) as client:
+            result = await client.list_tools()
+
+            tool = next(
+                item
+                for item in result.tools
+                if item.name == "create_live_proposal"
+            )
+
+            return tool.input_schema
+
+    schema = asyncio.run(get_schema())
+    properties = schema["properties"]
+
+    assert properties["account"]["type"] == "object"
+    assert (
+        properties["exchange_info"]["type"]
+        == "object"
+    )
+
+
 def test_stale_live_snapshot_returns_structured_rejection():
     async def call_tool() -> dict:
         arguments = {
             "symbol": "SOLUSDT",
-            "ticker_json": json.dumps(
-                {
-                    "symbol": "SOLUSDT",
-                    "closeTime": 1_700_000_330_000,
-                    "lastPrice": "101.00",
-                }
-            ),
-            "klines_json": json.dumps(
+            "ticker": {
+                "symbol": "SOLUSDT",
+                "closeTime": 1_700_000_330_000,
+                "lastPrice": "101.00",
+            },
+            "klines": [
                 [
-                    [
-                        (
-                            1_700_000_000_000
-                            + (index * 60_000)
-                        ),
-                        "100",
-                        "102",
-                        "99",
-                        "101",
-                        str(10 + index),
-                        (
-                            1_700_000_000_000
-                            + (index * 60_000)
-                            + 59_999
-                        ),
-                        "1010",
-                        25,
-                        "6",
-                        "606",
-                        "0",
-                    ]
-                    for index in range(6)
+                    (
+                        1_700_000_000_000
+                        + (index * 60_000)
+                    ),
+                    "100",
+                    "102",
+                    "99",
+                    "101",
+                    str(10 + index),
+                    (
+                        1_700_000_000_000
+                        + (index * 60_000)
+                        + 59_999
+                    ),
+                    "1010",
+                    25,
+                    "6",
+                    "606",
+                    "0",
                 ]
-            ),
-            "depth_json": json.dumps(
-                {
-                    "lastUpdateId": 123456,
-                    "bids": [
-                        ["100", "2"],
-                        ["99", "3"],
-                    ],
-                    "asks": [
-                        ["101", "4"],
-                        ["102", "1"],
-                    ],
-                }
-            ),
+                for index in range(6)
+            ],
+            "depth": {
+                "lastUpdateId": 123456,
+                "bids": [
+                    ["100", "2"],
+                    ["99", "3"],
+                ],
+                "asks": [
+                    ["101", "4"],
+                    ["102", "1"],
+                ],
+            },
         }
 
         async with Client(mcp) as client:
