@@ -1,0 +1,77 @@
+.block-container {
+    padding-top: 2.5rem;
+    padding-bottom: 3rem;
+}
+
+.sf-badge {
+    display: block;
+    width: fit-content;
+    box-sizing: border-box;
+    margin-top: 0.5rem;
+    margin-bottom: 0.9rem;
+    padding: 0.4rem 0.85rem;
+    border: 1px solid #f0b90b;
+    border-radius: 999px;
+    color: #f0b90b;
+    background: rgba(240, 185, 11, 0.08);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.02rem;
+    overflow: visible;
+}
+
+.sf-workflow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+    box-sizing: border-box;
+    margin: 1rem 0 1.25rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(240, 185, 11, 0.35);
+    border-radius: 0.65rem;
+    background: rgba(240, 185, 11, 0.045);
+}
+
+.sf-step {
+    color: #f2f2f2;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.sf-arrow {
+    color: #f0b90b;
+    font-weight: 800;
+    line-height: 1.4;
+}
+
+.sf-boundary {
+    box-sizing: border-box;
+    margin: 1rem 0;
+    padding: 1rem 1.1rem;
+    border-left: 4px solid #f0b90b;
+    border-radius: 0.4rem;
+    background: rgba(240, 185, 11, 0.08);
+}
+
+.sf-boundary-title {
+    margin-bottom: 0.3rem;
+    color: #f0b90b;
+    font-weight: 800;
+    line-height: 1.4;
+}
+
+.sf-boundary-text {
+    color: #e6e6e6;
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
+.sf-architecture-note {
+    margin-top: 0.5rem;
+    color: #aeb4bd;
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
