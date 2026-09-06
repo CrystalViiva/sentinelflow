@@ -2,231 +2,270 @@
 
 **Explainable market surveillance. Deterministic risk controls. Human-approved execution.**
 
-SentinelFlow analyzes market observations for unusual accumulation, explains the evidence,
-creates tightly bounded Spot proposals, and records every risk decision in PostgreSQL. It is
-designed to run beside Binance's official Agentic MCP connection in an MCP-compatible host.
+SentinelFlow is a safety-focused AI agent built for the Binance Agent OS Mini Hackathon.
 
-> Safety: replay is the default mode. This repository never stores Binance credentials and
-> never calls the Binance Agentic endpoint as if it were a normal REST API. Approval inside
-> SentinelFlow does not execute a trade; Binance MCP still requires its own user confirmation.
+It analyses market observations, explains unusual activity, applies deterministic risk policies and creates human-approved trade proposals—without giving an AI silent authority over user funds.
 
-## What is implemented
+> **Track A submission:** SentinelFlow demonstrates controlled agent decision-making. No live trade is claimed.
 
-- Deterministic volume, price, volatility, spread, liquidity and order-book features
-- Explainable 100-point accumulation score
-- Optional Isolation Forest anomaly detector
-- Three replay datasets and deterministic replay loader
-- Deterministic Risk Gate with nine checks
-- Versioned trade-proposal state machine
-- Caller-controlled idempotency request IDs, database uniqueness and client-order identifiers
-- PostgreSQL JSONB audit storage
-- SQLAlchemy repositories and Alembic migration
-- FastAPI endpoints and OpenAPI documentation
-- Streamlit review/approval dashboard
-- SentinelFlow MCP server using the official Python MCP SDK
-- Optional Gemini 2.5 Flash explanations with a no-LLM fallback
-- Unit tests, Docker database and Windows launch scripts
+## Why it matters
 
-## Intentionally excluded
+Binance MCP provides market and trading capabilities. SentinelFlow provides the safety layer around those capabilities:
 
-Futures, Margin, arbitrage, autonomous execution, news analysis, Telegram notifications,
-portfolio rebalancing, custom-model training and Skills Hub integration.
+- Was the market data valid and recent?
+- Why was an event classified as unusual?
+- What evidence contradicts the signal?
+- Does the proposal pass account and exchange constraints?
+- Did the user approve this exact proposal?
+- Has it expired or already been executed?
+- Can every decision be audited afterward?
 
-## Architecture
+> Binance MCP provides the execution capability. SentinelFlow provides the analysis, brakes and black-box recorder.
+
+## How it works
+
+```mermaid
+flowchart TD
+    A["Binance MCP payloads"] --> B["Validate market data"]
+    B --> C["Explainable anomaly score"]
+    C --> D["Deterministic Risk Gate"]
+    D --> E["Versioned proposal"]
+    E --> F["Human approval"]
+    F --> G["Atomic reservation"]
+    G --> H["Official Binance confirmation"]
+    H --> I["Audit outcome"]
+```
+
+SentinelFlow validates and analyses live market-data payloads returned by the official Binance Agentic MCP. It does not independently authenticate with Binance or bypass Binance’s supported connector and confirmation controls.
+
+## Key features
+
+- Explainable 0–100 anomaly scoring
+- Supporting evidence and counter-evidence
+- Replay and live-data analysis
+- Stale and malformed snapshot rejection
+- Open-candle exclusion
+- Binance symbol and account constraint validation
+- Deterministic Risk Gate
+- Versioned human approval
+- Idempotent proposal creation
+- Atomic execution reservation
+- Duplicate-attempt protection
+- Unknown-outcome reconciliation
+- Runtime secret redaction
+- PostgreSQL audit timeline
+- Streamlit dashboard
+- FastAPI endpoints
+- Two separated MCP servers
+- 57 passing automated tests
+
+## Market analysis
+
+SentinelFlow calculates:
+
+- Relative volume
+- Volume z-score
+- Price change and acceleration
+- Realised volatility
+- VWAP distance
+- Bid/ask depth ratio
+- Spread
+- Quote-notional liquidity depth
+
+The LLM may explain a completed result, but it cannot calculate or override the deterministic score.
+
+## Safety boundaries
+
+SentinelFlow rejects:
+
+- Replay or paper signals presented for live execution
+- Stale, future or timezone-naive timestamps
+- Mismatched symbols
+- Malformed klines
+- Open candles
+- Crossed order books
+- Unapproved or expired proposals
+- Previously executed proposals
+- Conflicting idempotency requests
+
+Approval inside SentinelFlow does not execute an order.
+
+Before external execution, SentinelFlow locks and reserves the exact approved proposal. An uncertain result becomes:
 
 ```text
-MCP-compatible host
-  ├── SentinelFlow MCP -> analytics -> Risk Gate -> PostgreSQL -> Streamlit
-  └── Official Binance MCP -> Agentic sub-account -> Binance confirmation
+UNKNOWN_REQUIRES_RECONCILIATION
 ```
 
-The MCP host orchestrates both servers. SentinelFlow returns an approved, unexpired proposal;
-the host then uses Binance MCP for the final user-confirmed action. There is deliberately no
-home-made Binance OAuth implementation in this repository.
+It is never treated as permission for a blind retry.
 
-## Windows quick start
+## MCP separation
 
-### 1. Install prerequisites
+SentinelFlow uses two MCP entry points to separate read-only analysis from control operations.
 
-- Python 3.12
-- Git
-- PostgreSQL 16, or Docker Desktop
-- An MCP-compatible client supported by Binance
+### Analysis server
 
-Confirm Python:
-
-```powershell
-python --version
+```text
+python -m app.mcp_server.analysis_server
 ```
 
-### 2. Create the virtual environment
+Tools:
 
-Open PowerShell inside this folder:
+- `analyze_replay`
+- `analyze_live_snapshot`
 
-```powershell
+These tools cannot create, approve, reserve or execute orders.
+
+### Proposal and control server
+
+```text
+python -m app.mcp_server.server
+```
+
+Tools cover:
+
+- Paper and live proposal creation
+- Human approval
+- Approved-proposal inspection
+- Execution reservation
+- Result recording
+- Audit history
+
+Actual Binance authentication and execution remain with the official supported Binance connector.
+
+## Quick start on Windows
+
+### 1. Create the environment
+
+```cmd
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -e ".[dev]"
+copy .env.example .env
 ```
 
-If PowerShell blocks activation:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-### 3. Create the environment file
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Keep these safety defaults:
+Keep the safe defaults:
 
 ```env
 APP_MODE=replay
 LIVE_TRADING_ENABLED=false
 ```
 
-### 4. Start PostgreSQL
+### 2. Configure PostgreSQL
 
-With Docker Desktop:
+Create a database named `sentinelflow` or start the included Docker service:
 
-```powershell
+```cmd
 docker compose up -d postgres
-docker compose ps
 ```
 
-Or create a local database named `sentinelflow` and update `DATABASE_URL` in `.env`.
+Then apply migrations:
 
-### 5. Run migrations
-
-```powershell
+```cmd
 alembic upgrade head
 ```
 
-### 6. Run tests
+### 3. Verify the project
 
-```powershell
+```cmd
 pytest -q
+python -m pip_audit
+python scripts\smoke_test.py
 ```
 
-Then run the real PostgreSQL/API smoke flow:
+Most recently verified:
 
-```powershell
-python scripts/smoke_test.py
+```text
+57 passed, 1 skipped
+No known dependency vulnerabilities
+SMOKE TEST PASSED
 ```
 
-The smoke test applies migrations, creates a replay signal through FastAPI, creates and retries
-the same proposal, verifies that both calls return the same proposal, approves it and checks its
-audit timeline.
+### 4. Run the API and dashboard
 
-To include the disposable-database integration test in pytest:
+API:
 
-```powershell
-$env:TEST_DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/sentinelflow_test"
-pytest -m integration -q
-```
-
-### 7. Start the API
-
-```powershell
+```cmd
 uvicorn app.main:app --reload
 ```
 
-Open <http://127.0.0.1:8000/docs>.
+Open:
 
-### 8. Start the dashboard
+```text
+http://127.0.0.1:8000/docs
+```
 
-Open another PowerShell window, activate the environment, then run:
+Dashboard:
 
-```powershell
+```cmd
 streamlit run app/ui/dashboard.py
 ```
 
-Open <http://localhost:8501> and run the SOL accumulation replay.
-
-### 9. Start SentinelFlow MCP
-
-Your MCP host should launch:
-
-```powershell
-C:\full\path\to\sentinelflow\.venv\Scripts\python.exe -m app.mcp_server.server
-```
-
-The exact host configuration differs between Codex, Claude, ChatGPT, VS Code and Grok. Use an
-absolute Windows path and set the working directory to this project folder.
-
-### 10. Connect Binance's official MCP separately
-
-Use Binance's documented endpoint in your supported client:
+Open:
 
 ```text
-https://agent.binance.com/mcp/agentic
+http://localhost:8501
 ```
 
-Authorize only Market Data, Account and Spot Trade. Do not place secrets in `.env` or source
-code. Confirm public market access and the Agentic balance before attempting any action.
+## Demo flow
 
-## Neon deployment database
+1. Analyse the SOL accumulation replay and show its high anomaly score.
+2. Analyse the normal BTC replay for comparison.
+3. Create and risk-check a paper proposal.
+4. Record human approval.
+5. Attempt replay-derived execution and show it being rejected.
+6. Submit stale live-shaped data and show structured rejection.
+7. Analyse a valid Binance-shaped payload locally.
+8. Display the audit timeline.
+9. Explain that final execution remains behind Binance’s official confirmation.
 
-Create a free Neon PostgreSQL project, copy its connection URL, ensure it uses TLS, then set:
+## Project structure
 
-```env
-DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST/DATABASE?sslmode=require
+```text
+app/analytics/     Feature calculation and scoring
+app/api/           FastAPI routes
+app/database/      Models, repositories and sessions
+app/llm/           Optional AI explanations
+app/mcp_server/    Analysis and control MCP servers
+app/replay/        Replay loader
+app/risk/          Risk gate and state machine
+app/security/      Secret redaction
+app/services/      Analysis, proposals and execution
+app/ui/            Streamlit dashboard
+tests/             Automated tests
 ```
 
-Run `alembic upgrade head` against it before starting the deployed application.
+## Honest limitations
 
-## API routes
+- SentinelFlow accepts Binance MCP payloads but does not fetch them independently.
+- No live Spot trade is claimed.
+- The complete workflow has not been demonstrated as one seamless hosted transaction.
+- Replay datasets are synthetic test fixtures.
+- The scoring thresholds require larger historical validation.
+- Cumulative exposure is not yet reconstructed from current holdings and verified fills.
+- Daily realised loss should ultimately come from verified execution history.
+- Production deployment would require authentication, authorization and operational monitoring.
 
-- `GET /api/health`
-- `POST /api/replay/analyze`
-- `GET /api/signals`
-- `POST /api/proposals`
-- `POST /api/proposals/{id}/decision`
-- `GET /api/proposals`
-- `GET /api/proposals/{id}/audit`
+## Intentionally excluded
 
-Proposal creation requires a caller-generated `request_id` UUID. Retrying the same request with
-the same UUID returns the original proposal; reusing it with different inputs is rejected.
+- Futures and Margin
+- Withdrawals and transfers
+- Fully autonomous trading
+- Arbitrage
+- Portfolio rebalancing
+- Credential custody
+- Bypassing Binance’s supported-agent controls
 
-## MCP tools
+## Security
 
-- `analyze_replay`
-- `create_paper_proposal`
-- `approve_proposal`
-- `get_approved_proposal`
-- `reserve_approved_execution`
-- `record_execution_result`
-- `get_audit_timeline`
-
-## Live-mode checklist
-
-Do not enable live mode until all items pass:
-
-1. Tests pass.
-2. PostgreSQL migrations are current.
-3. Replay and paper demonstrations work.
-4. Binance MCP is authenticated in its supported host.
-5. An isolated Agentic sub-account exists.
-6. Only Market Data, Account and Spot scopes are granted.
-7. The current symbol filters and minimum notional were fetched from Binance.
-8. The proposal passed every deterministic check.
-9. The proposal is approved and unexpired.
-10. The user verifies Binance's final confirmation details.
-
-## Important demo-data note
-
-The bundled datasets are explicitly labelled synthetic so the project is runnable immediately.
-Before submission, record and add a genuine historical Binance dataset with source timestamps,
-then retain the synthetic datasets as safety-test fixtures. Never misrepresent synthetic data as
-historical exchange data.
+- Replay mode is the default.
+- Live execution is disabled by default.
+- `.env` is ignored by Git.
+- Binance credentials are not stored.
+- Sensitive runtime values are redacted.
+- Human approval is separate from execution.
+- Binance retains its authentication and final confirmation boundary.
 
 ## Disclaimer
 
-SentinelFlow is a hackathon prototype for market surveillance and controlled tool orchestration.
-It is not financial advice and does not promise profitable results. Crypto trading can result in
-loss of capital.
+SentinelFlow is a hackathon prototype. It is not financial advice, does not guarantee profitable results and should not be treated as a production trading system. Cryptocurrency trading can result in loss of capital.
